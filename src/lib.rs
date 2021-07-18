@@ -1,5 +1,6 @@
 use ignore::{DirEntry, WalkBuilder};
 use std::path::{Path, PathBuf};
+pub mod cli;
 
 pub fn get_candidates(
     root: impl AsRef<Path>,
