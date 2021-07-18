@@ -1,16 +1,6 @@
-use clap::{crate_authors, crate_description, crate_name, crate_version, App, AppSettings, Arg};
+use crate::{no, utils::IntoStaticStr};
+use clap::{crate_description, crate_name, crate_version, App, AppSettings, Arg, Shell};
 use tracing::instrument;
-
-/// Extension trait for [`String`], allowing it to be use as a `&'static str`
-trait IntoStaticStr {
-    fn into_static_str(self) -> &'static str;
-}
-
-impl IntoStaticStr for String {
-    fn into_static_str(self) -> &'static str {
-        Box::leak(self.into_boxed_str())
-    }
-}
 
 /// Extension trait for [`Arg`], which will add a `no-` version of the argument
 trait WithNo: Sized {
@@ -49,21 +39,13 @@ pub mod args {
     pub const INCLUDE_HIDDEN: &str = "include_hidden";
     pub const INCLUDE_GITIGNORED: &str = "include_gitignored";
     pub const INCLUDE_FOLDERS: &str = "include_folders";
-}
-
-#[macro_export]
-macro_rules! no {
-    ($ex:expr) => {{
-        use const_format::concatcp;
-        concatcp!("no_", $ex)
-    }};
+    pub const COMPLETIONS: &str = "completions";
 }
 
 #[instrument]
 pub fn app<'a, 'b>() -> App<'a, 'b> {
     use args::*;
     App::new(crate_name!())
-        .author(crate_authors!())
         .version(crate_version!())
         .about(crate_description!())
         .setting(AppSettings::ColorAuto)
@@ -95,5 +77,13 @@ pub fn app<'a, 'b>() -> App<'a, 'b> {
                 .help("Treat folders as candidates. Defaults to `no`")
                 .with_no(Some("F"))
                 .as_ref(),
+        ).arg(
+            Arg::with_name(COMPLETIONS)
+                .short("c")
+                .long("generate-completions")
+                .takes_value(true)
+                .conflicts_with_all(&[PATHS, INCLUDE_HIDDEN, no!(INCLUDE_HIDDEN), INCLUDE_GITIGNORED, no!(INCLUDE_GITIGNORED), INCLUDE_FOLDERS, no!(INCLUDE_FOLDERS)])
+                .possible_values(Shell::variants().as_ref())
+                .help("Print out a shell completion script for the given shell")
         )
 }
