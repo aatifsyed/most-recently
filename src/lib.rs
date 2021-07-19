@@ -14,7 +14,7 @@ pub fn get_candidates(
     include_hidden: bool,
     include_gitignored: bool,
 ) -> impl Iterator<Item = PathBuf> {
-    WalkBuilder::new(root)
+    let entries = WalkBuilder::new(root)
         .hidden(include_hidden)
         .parents(true)
         .git_ignore(!include_gitignored)
@@ -29,8 +29,14 @@ pub fn get_candidates(
                 error!("Error from Walk: {:?}", err);
                 None
             }
-        })
-        .map(DirEntry::into_path)
+        });
+    let mut paths = entries.map(DirEntry::into_path);
+
+    if !include_gitignored {
+        paths = paths.filter(predicate)
+    }
+
+    paths
 }
 
 #[instrument(skip(roots, key_fn))]
