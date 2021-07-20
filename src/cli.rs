@@ -1,7 +1,6 @@
 use crate::Method;
 use clap::{
-    crate_description, crate_name, crate_version, App, AppSettings, Arg, ArgGroup, Shell,
-    SubCommand,
+    crate_description, crate_name, crate_version, App, AppSettings, Arg, Shell, SubCommand,
 };
 use itertools::Itertools;
 use strum::{IntoEnumIterator, VariantNames};
@@ -11,8 +10,6 @@ pub mod args {
     pub const COMPLETIONS: &str = "completions";
     pub const SHELL: &str = "shell";
     pub const PATHS: &str = "paths";
-    pub const STDIN: &str = "stdin";
-    pub const INPUT: &str = "stdin_or_paths";
 }
 
 impl Method {
@@ -35,7 +32,7 @@ pub fn app<'a, 'b>() -> App<'a, 'b> {
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .usage(
             format!(
-                "{} <{}> <--stdin | PATH...>\n OR:\n    {} completions <{}>",
+                "{} <{}> [PATH...]>\n OR:\n    {} completions <{}>",
                 crate_name!(),
                 Method::VARIANTS.iter().format(" | "),
                 crate_name!(),
@@ -50,7 +47,8 @@ pub fn app<'a, 'b>() -> App<'a, 'b> {
                     Arg::with_name(SHELL)
                         .takes_value(true)
                         .value_name("shell")
-                        .possible_values(Shell::variants().as_ref()),
+                        .possible_values(Shell::variants().as_ref())
+                        .required(true),
                 ),
         )
         // A little ugly, but proves to be superior to argument groups
@@ -60,21 +58,8 @@ pub fn app<'a, 'b>() -> App<'a, 'b> {
                 .display_order(0)
                 .arg(
                     Arg::with_name(PATHS)
-                        .help("Candidate paths. May be files or folders")
-                        .min_values(1),
-                )
-                .arg(
-                    Arg::with_name(STDIN)
-                        .short("s")
-                        .long("stdin")
-                        .help("Read candidate paths from stdin (one line per path)"),
-                )
-                .group(
-                    ArgGroup::with_name(INPUT)
-                        .arg(PATHS)
-                        .arg(STDIN)
-                        .multiple(false)
-                        .required(true),
+                        .help("Candidate paths. May be files or folders. If none supplied, will be read from stdin (one path per line)")
+                        .multiple(true)
                 )
         }))
 }

@@ -1,12 +1,10 @@
 use anyhow::{self, Context};
-use clap::crate_name;
-use clap::Shell;
+use clap::{crate_name, Shell};
 use most_recently::{
     cli::{self, args::*},
     Method, MostRecently,
 };
-use std::io::stdin;
-use std::io::BufRead;
+use std::io::{stdin, BufRead};
 use std::{path::PathBuf, str::FromStr};
 use tracing::{debug, instrument};
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
@@ -25,28 +23,31 @@ fn main() -> anyhow::Result<()> {
         let shell = matches
             .value_of(SHELL)
             .expect("completions must specify shell");
+
         debug!("Printing completions for {}", shell);
+
         let shell = Shell::from_str(shell).expect("invalid shells are disallowed");
         cli::app().gen_completions_to(crate_name!(), shell, &mut std::io::stdout());
         Ok(())
     } else {
         let (method, matches) = matches.subcommand();
-        let method = Method::from_str(method).expect("invalid methods not subcommands");
-        let matches = matches.expect("methods must have either stdin or paths");
-        let most_recent = match matches.is_present(STDIN) {
-            true => stdin()
+        let method = Method::from_str(method).expect("subcommand isn't a valid method");
+        let matches = matches.expect("methods must have matches");
+
+        debug!("Printing most recently {}", method.as_ref());
+
+        let most_recent = match matches.values_of(PATHS) {
+            None => stdin()
                 .lock()
                 .lines()
                 .filter_map(Result::ok)
                 .map(PathBuf::from)
                 .most_recently(method),
-            false => matches
-                .values_of(PATHS)
-                .expect("must be at least one path when not stdin")
-                .map(PathBuf::from)
-                .most_recently(method),
+            Some(values) => values.map(PathBuf::from).most_recently(method),
         };
         let most_recent = most_recent.with_context(|| "No viable candidate")?;
+
+        debug!("{:?}", most_recent);
         println!("{}", most_recent.display());
         Ok(())
     }
