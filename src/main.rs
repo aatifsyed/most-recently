@@ -1,23 +1,15 @@
 use anyhow::{self, Context};
 use clap::crate_name;
 use clap::Shell;
-use itertools::Itertools;
-use most_recent_file::{
+use most_recently::{
     cli::{self, args::*},
-    get_by_key, no,
+    Method, MostRecently,
 };
-use std::{fmt::Debug, path::PathBuf, str::FromStr};
-use thiserror::Error;
-use tracing::{debug, error, instrument};
+use std::io::stdin;
+use std::io::BufRead;
+use std::{path::PathBuf, str::FromStr};
+use tracing::{debug, instrument};
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
-
-#[derive(Debug, Error)]
-enum InconsistentArgument<A: Debug, B: Debug> {
-    #[error("Expected to be one of {variants:?}, but found to be {got:?}")]
-    ImpossibleVariant { variants: A, got: B },
-    #[error("Mandatory argument {argument:?} wasn't present")]
-    MandatoryArgumentNotPresent { argument: A },
-}
 
 /// Translates from the CLI to real arguments, and runs the business logic of the program
 #[instrument]
@@ -27,49 +19,35 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let matches = cli::app().get_matches();
+    debug!("Arguments: {:?}", matches);
 
-    if let Some(shell) = matches.value_of(COMPLETIONS) {
+    if let Some(matches) = matches.subcommand_matches(COMPLETIONS) {
+        let shell = matches
+            .value_of(SHELL)
+            .expect("completions must specify shell");
         debug!("Printing completions for {}", shell);
-        let shell =
-            Shell::from_str(shell).map_err(|_| InconsistentArgument::ImpossibleVariant {
-                variants: Shell::variants(),
-                got: shell.to_owned(),
-            })?;
+        let shell = Shell::from_str(shell).expect("invalid shells are disallowed");
         cli::app().gen_completions_to(crate_name!(), shell, &mut std::io::stdout());
-        return Ok(());
+        Ok(())
+    } else {
+        let (method, matches) = matches.subcommand();
+        let method = Method::from_str(method).expect("invalid methods not subcommands");
+        let matches = matches.expect("methods must have either stdin or paths");
+        let most_recent = match matches.is_present(STDIN) {
+            true => stdin()
+                .lock()
+                .lines()
+                .filter_map(Result::ok)
+                .map(PathBuf::from)
+                .most_recently(method),
+            false => matches
+                .values_of(PATHS)
+                .expect("must be at least one path when not stdin")
+                .map(PathBuf::from)
+                .most_recently(method),
+        };
+        let most_recent = most_recent.with_context(|| "No viable candidate")?;
+        println!("{}", most_recent.display());
+        Ok(())
     }
-
-    let include_hidden =
-        matches.is_present(INCLUDE_HIDDEN) && !matches.is_present(no!(INCLUDE_HIDDEN));
-    let include_gitignored =
-        matches.is_present(INCLUDE_GITIGNORED) && !matches.is_present(no!(INCLUDE_GITIGNORED));
-    let include_folders =
-        matches.is_present(INCLUDE_FOLDERS) && !matches.is_present(no!(INCLUDE_FOLDERS));
-    let paths = matches
-        .values_of_os(PATHS)
-        .with_context(
-            || InconsistentArgument::<_, &str>::MandatoryArgumentNotPresent { argument: PATHS },
-        )?
-        .map(PathBuf::from)
-        .collect_vec();
-
-    debug!("arguments: {:?}", matches);
-    debug!("include_hidden: {:?}", include_hidden);
-    debug!("include_gitignored: {:?}", include_gitignored);
-    debug!("include_folders: {:?}", include_folders);
-    debug!("paths: {:?}", paths);
-
-    let most_recent = get_by_key(
-        paths,
-        |path| {
-            path.metadata()
-                .and_then(|metadata| metadata.accessed())
-                .ok()
-        },
-        include_hidden,
-        include_gitignored,
-    )
-    .with_context(|| "No viable candidate")?;
-    println!("{:?}", most_recent);
-    Ok(())
 }

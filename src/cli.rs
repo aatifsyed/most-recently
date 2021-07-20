@@ -1,45 +1,28 @@
-use crate::{no, utils::IntoStaticStr};
-use clap::{crate_description, crate_name, crate_version, App, AppSettings, Arg, Shell};
+use crate::Method;
+use clap::{
+    crate_description, crate_name, crate_version, App, AppSettings, Arg, ArgGroup, Shell,
+    SubCommand,
+};
+use itertools::Itertools;
+use strum::{IntoEnumIterator, VariantNames};
 use tracing::instrument;
 
-/// Extension trait for [`Arg`], which will add a `no-` version of the argument
-trait WithNo: Sized {
-    fn with_no(self, short: Option<impl AsRef<str>>) -> Vec<Self>;
-}
-
-impl<'a, 'b> WithNo for Arg<'a, 'b> {
-    fn with_no(self, short: Option<impl AsRef<str>>) -> Vec<Self> {
-        let yes = self;
-
-        let yes_name = yes.b.name;
-        let no_name = format!("no_{}", yes_name).into_static_str();
-
-        let yes = yes.overrides_with(&no_name);
-
-        let yes_long = yes.s.long.expect(&format!(
-            "Argument {:?} does not have a long option",
-            yes.b.name
-        ));
-        let no_long = format!("no-{}", yes_long).into_static_str();
-
-        let mut no = Arg::with_name(&no_name)
-            .long(&no_long)
-            .overrides_with(yes_name);
-
-        if let Some(short) = short {
-            no = no.short(short)
-        }
-
-        vec![yes, no]
-    }
-}
-
 pub mod args {
-    pub const PATHS: &str = "paths";
-    pub const INCLUDE_HIDDEN: &str = "include_hidden";
-    pub const INCLUDE_GITIGNORED: &str = "include_gitignored";
-    pub const INCLUDE_FOLDERS: &str = "include_folders";
     pub const COMPLETIONS: &str = "completions";
+    pub const SHELL: &str = "shell";
+    pub const PATHS: &str = "paths";
+    pub const STDIN: &str = "stdin";
+    pub const INPUT: &str = "stdin_or_paths";
+}
+
+impl Method {
+    fn helptext(&self) -> &'static str {
+        match self {
+            Method::Accessed => "Sort by access on this file or directory",
+            Method::Created => "Sort by creation on this volume",
+            Method::Modified => "Sort by modification of the file or directory",
+        }
+    }
 }
 
 #[instrument]
@@ -49,41 +32,59 @@ pub fn app<'a, 'b>() -> App<'a, 'b> {
         .version(crate_version!())
         .about(crate_description!())
         .setting(AppSettings::ColorAuto)
-        .arg(
-            Arg::with_name(PATHS)
-                .help("A path to search for candidates in, or itself a candidate file. Defaults to current directory")
-                .multiple(true).value_name("PATH").default_value("."),
+        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .usage(
+            format!(
+                "{} <{}> <--stdin | PATH...>\n OR:\n    {} completions <{}>",
+                crate_name!(),
+                Method::VARIANTS.iter().format(" | "),
+                crate_name!(),
+                Shell::variants().iter().format(" | ")
+            )
+            .into_static_str(),
         )
-        .args(
-            Arg::with_name(INCLUDE_HIDDEN)
-                .short("h")
-                .long("include-hidden")
-                .help("Treat hidden files as candidates. Defaults to `no`")
-                .with_no(Some("H"))
-                .as_ref(),
+        .subcommand(
+            SubCommand::with_name(COMPLETIONS)
+                .about("Print out a shell completion script for a given shell")
+                .arg(
+                    Arg::with_name(SHELL)
+                        .takes_value(true)
+                        .value_name("shell")
+                        .possible_values(Shell::variants().as_ref()),
+                ),
         )
-        .args(
-            Arg::with_name(INCLUDE_GITIGNORED)
-                .short("i")
-                .long("include-gitignored")
-                .help("Treat gitignored files as candidates. Defaults to `no`")
-                .with_no(Some("I"))
-                .as_ref(),
-        )
-        .args(
-            Arg::with_name(INCLUDE_FOLDERS)
-                .short("f")
-                .long("include-folders")
-                .help("Treat folders as candidates. Defaults to `no`")
-                .with_no(Some("F"))
-                .as_ref(),
-        ).arg(
-            Arg::with_name(COMPLETIONS)
-                .short("c")
-                .long("generate-completions")
-                .takes_value(true)
-                .conflicts_with_all(&[PATHS, INCLUDE_HIDDEN, no!(INCLUDE_HIDDEN), INCLUDE_GITIGNORED, no!(INCLUDE_GITIGNORED), INCLUDE_FOLDERS, no!(INCLUDE_FOLDERS)])
-                .possible_values(Shell::variants().as_ref())
-                .help("Print out a shell completion script for the given shell")
-        )
+        // A little ugly, but proves to be superior to argument groups
+        .subcommands(Method::iter().map(|method| {
+            SubCommand::with_name(method.as_ref())
+                .about(method.helptext())
+                .display_order(0)
+                .arg(
+                    Arg::with_name(PATHS)
+                        .help("Candidate paths. May be files or folders")
+                        .min_values(1),
+                )
+                .arg(
+                    Arg::with_name(STDIN)
+                        .short("s")
+                        .long("stdin")
+                        .help("Read candidate paths from stdin (one line per path)"),
+                )
+                .group(
+                    ArgGroup::with_name(INPUT)
+                        .arg(PATHS)
+                        .arg(STDIN)
+                        .multiple(false)
+                        .required(true),
+                )
+        }))
+}
+
+trait IntoStaticStr {
+    fn into_static_str(self) -> &'static str;
+}
+
+impl IntoStaticStr for String {
+    fn into_static_str(self) -> &'static str {
+        Box::leak(self.into_boxed_str())
+    }
 }
