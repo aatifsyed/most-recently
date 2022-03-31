@@ -32,11 +32,11 @@ pub fn app<'a, 'b>() -> App<'a, 'b> {
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .usage(
             format!(
-                "{} <{}> [PATH...]>\n OR:\n    {} completions <{}>",
+                "{} <{}> [PATH...]\n    {} completions <{}>",
                 crate_name!(),
-                Method::VARIANTS.iter().format(" | "),
+                Method::VARIANTS.iter().format("|"),
                 crate_name!(),
-                Shell::variants().iter().format(" | ")
+                Shell::variants().iter().format("|")
             )
             .into_static_str(),
         )

@@ -6,7 +6,7 @@ use most_recently::{
 };
 use std::io::{stdin, BufRead};
 use std::{path::PathBuf, str::FromStr};
-use tracing::{debug, instrument};
+use tracing::{debug, instrument, trace};
 use tracing_subscriber::{fmt::SubscriberBuilder, EnvFilter};
 
 /// Translates from the CLI to real arguments, and runs the business logic of the program
@@ -42,12 +42,17 @@ fn main() -> anyhow::Result<()> {
                 .lines()
                 .filter_map(Result::ok)
                 .map(PathBuf::from)
+                .inspect(|path_buf| trace!("Candidate from stdin: {:?}", path_buf))
                 .most_recently(method),
-            Some(values) => values.map(PathBuf::from).most_recently(method),
+            Some(values) => values
+                .map(PathBuf::from)
+                .inspect(|path_buf| trace!("Candidate from arguments: {:?}", path_buf))
+                .most_recently(method),
         };
+        debug!("most recent: {:?}", most_recent);
+
         let most_recent = most_recent.with_context(|| "No viable candidate")?;
 
-        debug!("{:?}", most_recent);
         println!("{}", most_recent.display());
         Ok(())
     }
